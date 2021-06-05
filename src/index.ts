@@ -413,22 +413,17 @@ export function getExtensions(config: _ts.ParsedCommandLine) {
 
 function patchResolveFileName() {
   const originalResolveFilename = (Module as any)._resolveFilename;
-  const jsExt = /\.[mc]?js(x)?/;
+  const jsExt = '.js';
 
   (Module as any)._resolveFilename = function (...args: any[]) {
     const [request, _, isMain ] = args
     if (isMain) {
       return originalResolveFilename.apply(this, args);
     }
-    try {
-      return originalResolveFilename.apply(this, args);
-    } catch (e) {
-      if (e.code === 'MODULE_NOT_FOUND' && jsExt.test(request)) {
-        args[0] = request.replace(jsExt, '.ts$1');
-        return originalResolveFilename.apply(this, args);
-      }
-      throw e;
+    if(request.slice(-3) === jsExt) {
+      args[0] = request.slice(0, -3)
     }
+    return originalResolveFilename.apply(this, args);
   };
 }
 
@@ -505,6 +500,7 @@ export function create(rawOptions: CreateOptions = {}): Service {
     ...(tsNodeOptionsFromTsconfig.require || []),
     ...(rawOptions.require || []),
   ];
+  options.preferTsExts = options.preferTsExts || options.tryTsExt
 
   // Re-load the compiler in case it has changed.
   // Compiler is loaded relative to tsconfig.json, so tsconfig discovery may cause us to load a
