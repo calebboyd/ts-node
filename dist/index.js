@@ -131,22 +131,16 @@ function getExtensions(config) {
 exports.getExtensions = getExtensions;
 function patchResolveFileName() {
     const originalResolveFilename = module_1.Module._resolveFilename;
-    const jsExt = /\.[mc]?js(x)?/;
+    const jsExt = '.js';
     module_1.Module._resolveFilename = function (...args) {
         const [request, _, isMain] = args;
         if (isMain) {
             return originalResolveFilename.apply(this, args);
         }
-        try {
-            return originalResolveFilename.apply(this, args);
+        if (request.slice(-3) === jsExt) {
+            args[0] = request.slice(0, -3);
         }
-        catch (e) {
-            if (e.code === 'MODULE_NOT_FOUND' && jsExt.test(request)) {
-                args[0] = request.replace(jsExt, '.ts$1');
-                return originalResolveFilename.apply(this, args);
-            }
-            throw e;
-        }
+        return originalResolveFilename.apply(this, args);
     };
 }
 /**
@@ -196,6 +190,7 @@ function create(rawOptions = {}) {
         ...(tsNodeOptionsFromTsconfig.require || []),
         ...(rawOptions.require || []),
     ];
+    options.preferTsExts = options.preferTsExts || options.tryTsExt;
     // Re-load the compiler in case it has changed.
     // Compiler is loaded relative to tsconfig.json, so tsconfig discovery may cause us to load a
     // different compiler than we did above, even if the name has not changed.
