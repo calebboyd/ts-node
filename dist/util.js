@@ -1,7 +1,7 @@
 "use strict";
 var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.normalizeSlashes = exports.parse = exports.split = exports.assign = exports.yn = exports.createRequire = void 0;
+exports.isRelativeSpecifier = exports.normalizeSlashes = exports.parse = exports.split = exports.assign = exports.yn = exports.createRequire = void 0;
 const module_1 = require("module");
 const ynModule = require("yn");
 /** @internal */
@@ -56,4 +56,21 @@ function normalizeSlashes(value) {
     return value.replace(/\\/g, '/');
 }
 exports.normalizeSlashes = normalizeSlashes;
+/**
+ *
+ * Determine if a specifier is relative (from node core)
+ * @internal
+ */
+function isRelativeSpecifier(specifier) {
+    if (specifier[0] === '.') {
+        if (specifier.length === 1 || specifier[1] === '/')
+            return true;
+        if (specifier[1] === '.') {
+            if (specifier.length === 2 || specifier[2] === '/')
+                return true;
+        }
+    }
+    return false;
+}
+exports.isRelativeSpecifier = isRelativeSpecifier;
 //# sourceMappingURL=util.js.map

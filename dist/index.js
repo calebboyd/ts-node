@@ -129,16 +129,40 @@ function getExtensions(config) {
     return { tsExtensions, jsExtensions };
 }
 exports.getExtensions = getExtensions;
+function canDropJsExt(request, parentPath) {
+    var _a;
+    if (util_1.isRelativeSpecifier(request) && request.slice(-3) === '.js') {
+        if (!parentPath)
+            return true;
+        const paths = ((_a = require.main) === null || _a === void 0 ? void 0 : _a.paths) || [];
+        for (let i = 0; i < paths.length; i++) {
+            if (parentPath.startsWith(paths[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
 function patchResolveFileName() {
     const originalResolveFilename = module_1.Module._resolveFilename;
-    const jsExt = '.js';
     module_1.Module._resolveFilename = function (...args) {
-        const [request, _, isMain] = args;
+        const [request, parent, isMain] = args;
         if (isMain) {
             return originalResolveFilename.apply(this, args);
         }
-        if (request.slice(-3) === jsExt) {
-            args[0] = request.slice(0, -3);
+        if (canDropJsExt(request, parent === null || parent === void 0 ? void 0 : parent.path)) {
+            try {
+                return originalResolveFilename.call(this, request.slice(0, -3), ...args.slice(1));
+            }
+            catch (e) {
+                const mainFile = originalResolveFilename.apply(this, args);
+                if (mainFile.endsWith('.js')) {
+                    //re-resolve with ts preference
+                    //look-up tsconfig drop outDir??
+                    return originalResolveFilename.call(this, mainFile.slice(0, -3), ...args.slice(1));
+                }
+                return mainFile;
+            }
         }
         return originalResolveFilename.apply(this, args);
     };
