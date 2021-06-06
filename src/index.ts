@@ -8,7 +8,7 @@ import { BaseError } from 'make-error';
 import type * as _ts from 'typescript';
 
 import type { Transpiler, TranspilerFactory } from './transpilers/types';
-import { assign, normalizeSlashes, parse, split, yn } from './util';
+import { assign, normalizeSlashes, parse, split, yn, isRelativeSpecifier   } from './util';
 import { readConfig } from './configuration';
 import type { TSCommon, TSInternal } from './ts-compiler-types';
 
@@ -411,17 +411,40 @@ export function getExtensions(config: _ts.ParsedCommandLine) {
   return { tsExtensions, jsExtensions };
 }
 
+function canDropJsExt(request: string, parentPath?: string) {
+  if (isRelativeSpecifier(request) && request.slice(-3) === '.js') {
+    if (!parentPath) return true
+    const paths = require.main?.paths || []
+    for(let i = 0; i < paths.length; i++) {
+      if (parentPath.startsWith(paths[i])) {
+        return false
+      }
+    }
+    return true
+  }
+}
+
+
 function patchResolveFileName() {
   const originalResolveFilename = (Module as any)._resolveFilename;
-  const jsExt = '.js';
 
   (Module as any)._resolveFilename = function (...args: any[]) {
-    const [request, _, isMain ] = args
+    const [request, parent, isMain ] = args
     if (isMain) {
       return originalResolveFilename.apply(this, args);
     }
-    if(request.slice(-3) === jsExt) {
-      args[0] = request.slice(0, -3)
+    if(canDropJsExt(request, parent?.path)) {
+      try {
+        return originalResolveFilename.call(this, request.slice(0, -3), ...args.slice(1))
+      } catch(e) {
+        const mainFile = originalResolveFilename.apply(this, args);
+        if (mainFile.endsWith('.js')) {
+          //re-resolve with ts preference
+          //look-up tsconfig drop outDir??
+          return originalResolveFilename.call(this, mainFile.slice(0, -3), ...args.slice(1))
+        }
+        return mainFile
+      }
     }
     return originalResolveFilename.apply(this, args);
   };
