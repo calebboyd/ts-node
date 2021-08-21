@@ -15,6 +15,7 @@ import {
   parse,
   split,
   yn,
+  isRelativeSpecifier,
 } from './util';
 import { readConfig } from './configuration';
 import type { TSCommon, TSInternal } from './ts-compiler-types';
@@ -136,6 +137,7 @@ export interface ProcessEnv {
   TS_NODE_SKIP_PROJECT?: string;
   TS_NODE_SKIP_IGNORE?: string;
   TS_NODE_PREFER_TS_EXTS?: string;
+  TS_NODE_TRY_TS_EXT?: string;
   TS_NODE_IGNORE_DIAGNOSTICS?: string;
   TS_NODE_TRANSPILE_ONLY?: string;
   TS_NODE_TYPE_CHECK?: string;
@@ -378,6 +380,14 @@ export interface RegisterOptions extends CreateOptions {
    * @default false
    */
   preferTsExts?: boolean;
+
+  /**
+   * Attempt to resolve the typescript file when a request with a js extension is provided.
+   * Implies preferTsExts.
+   *
+   * @default false
+   */
+  tryTsExt?: boolean;
 }
 
 /**
@@ -425,6 +435,7 @@ export const DEFAULTS: RegisterOptions = {
   skipProject: yn(env.TS_NODE_SKIP_PROJECT),
   skipIgnore: yn(env.TS_NODE_SKIP_IGNORE),
   preferTsExts: yn(env.TS_NODE_PREFER_TS_EXTS),
+  tryTsExt: yn(env.TS_NODE_TRY_TS_EXT),
   ignoreDiagnostics: split(env.TS_NODE_IGNORE_DIAGNOSTICS),
   transpileOnly: yn(env.TS_NODE_TRANSPILE_ONLY),
   typeCheck: yn(env.TS_NODE_TYPE_CHECK),
@@ -510,6 +521,51 @@ export function getExtensions(config: _ts.ParsedCommandLine) {
   return { tsExtensions, jsExtensions };
 }
 
+function canDropJsExt(request: string, parentPath?: string) {
+  if (isRelativeSpecifier(request) && request.slice(-3) === '.js') {
+    if (!parentPath) return true;
+    const paths = require.main?.paths || [];
+    for (let i = 0; i < paths.length; i++) {
+      if (parentPath.startsWith(paths[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
+function patchResolveFileName() {
+  const originalResolveFilename = (Module as any)._resolveFilename;
+
+  (Module as any)._resolveFilename = function (...args: any[]) {
+    const [request, parent, isMain] = args;
+    if (isMain) {
+      return originalResolveFilename.apply(this, args);
+    }
+    if (canDropJsExt(request, parent?.path)) {
+      try {
+        return originalResolveFilename.call(
+          this,
+          request.slice(0, -3),
+          ...args.slice(1)
+        );
+      } catch (e) {
+        const mainFile = originalResolveFilename.apply(this, args);
+        if (mainFile.endsWith('.js')) {
+          //re-resolve with configured extension preference
+          return originalResolveFilename.call(
+            this,
+            mainFile.slice(0, -3),
+            ...args.slice(1)
+          );
+        }
+        return mainFile;
+      }
+    }
+    return originalResolveFilename.apply(this, args);
+  };
+}
+
 /**
  * Create a new TypeScript compiler instance and register it onto node.js
  */
@@ -542,6 +598,10 @@ export function register(
     service,
     originalJsHandler
   );
+
+  if (service.options.tryTsExt) {
+    patchResolveFileName();
+  }
 
   // Require specified modules before start-up.
   (Module as any)._preloadModules(service.options.require);
@@ -594,6 +654,7 @@ export function create(rawOptions: CreateOptions = {}): Service {
     ...(tsNodeOptionsFromTsconfig.require || []),
     ...(rawOptions.require || []),
   ];
+  options.preferTsExts = options.preferTsExts || options.tryTsExt;
 
   // Experimental REPL await is not compatible targets lower than ES2018
   const targetSupportsTla = config.options.target! >= ts.ScriptTarget.ES2018;

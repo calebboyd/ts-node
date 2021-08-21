@@ -90,3 +90,24 @@ export function cachedLookup<T, R>(fn: (arg: T) => R): (arg: T) => R {
     return cache.get(arg)!;
   };
 }
+
+/**
+ * We do not support ts's `trace` option yet.  In the meantime, rather than omit
+ * `trace` options in hosts, I am using this placeholder.
+ */
+export function trace(s: string): void {}
+
+/**
+ *
+ * Determine if a specifier is relative (from node core)
+ * @internal
+ */
+export function isRelativeSpecifier(specifier: string) {
+  if (specifier[0] === '.') {
+    if (specifier.length === 1 || specifier[1] === '/') return true;
+    if (specifier[1] === '.') {
+      if (specifier.length === 2 || specifier[2] === '/') return true;
+    }
+  }
+  return false;
+}
